@@ -11,6 +11,10 @@ RESULTS_DIR="${BASE_DIR}/results"
 PLOTS_DIR="${BASE_DIR}/plots"
 LOGS_DIR="${BASE_DIR}/logs"
 
+# Set parameters
+N_SAMPLES=1000
+SEED=42
+
 # Create directories if they don't exist
 mkdir -p "$DATA_DIR" "$MODELS_DIR" "$RESULTS_DIR" "$PLOTS_DIR" "$LOGS_DIR"
 
@@ -51,38 +55,20 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Step 3: Run attributions for each model and scenario
+# Step 3: Compute attributions
 echo -e "\n===== Step 3: Computing attributions ====="
-
-# Define attribution methods based on model type
-declare -A MODEL_ATTRIBUTION_METHODS
-MODEL_ATTRIBUTION_METHODS["mlp"]=("saliency" "gradient_input" "integrated_gradients" "shap")
-MODEL_ATTRIBUTION_METHODS["lstm"]=("saliency" "gradient_input" "integrated_gradients" "shap")
-MODEL_ATTRIBUTION_METHODS["xgboost"]=("xgboost" "shap")
-
-# Compute attributions for each model and scenario
 echo "Computing attributions..."
-for model_type in "${MODEL_TYPES[@]}"; do
-    for scenario in "${SCENARIOS[@]}"; do
-        echo "Computing attributions for $model_type model in $scenario scenario..."
-        python3 scripts/run_attributions.py \
-            --model_type="$model_type" \
-            --scenario="$scenario" \
-            --data_dir="$DATA_DIR" \
-            --models_dir="$MODELS_DIR" \
-            --output_dir="$RESULTS_DIR" \
-            --attribution_methods "${MODEL_ATTRIBUTION_METHODS[$model_type]}" \
-            --n_samples=1000 \
-            --batch_size=32 \
-            --seed=42 \
-            --log_file="$LOG_FILE"
-        
-        if [ $? -ne 0 ]; then
-            echo "Error: Failed to compute attributions for $model_type model in $scenario scenario"
-            exit 1
-        fi
-    done
-done
+
+python3 scripts/run_all_attributions.py \
+    --base_dir="$BASE_DIR" \
+    --n_samples="$N_SAMPLES" \
+    --random_state="$SEED"
+
+# Check if attribution computation was successful
+if [ $? -ne 0 ]; then
+    echo "Error: Attribution computation failed. Exiting."
+    exit 1
+fi
 
 # Step 4: Evaluate faithfulness of attributions
 echo -e "\n===== Step 4: Evaluating causal faithfulness ====="

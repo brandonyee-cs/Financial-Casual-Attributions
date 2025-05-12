@@ -175,6 +175,4 @@ cython_debug/
 
 /data/
 /models/
-/results/
-/plots/
 /logs/

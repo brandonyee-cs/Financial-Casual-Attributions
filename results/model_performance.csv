@@ -1,0 +1,2 @@
+accuracy,f1,scenario,model_type
+0.9957,0.9560776302349336,fraud_detection,xgboost
