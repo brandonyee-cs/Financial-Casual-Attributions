@@ -509,6 +509,35 @@ class TimeSeriesLSTMModel:
             self.optimizer = optim.Adam(self.model.parameters())
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
+    def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """
+        Evaluate the model performance.
+        
+        Args:
+            X: Input features
+            y: Target variable
+            
+        Returns:
+            Dict with evaluation metrics
+        """
+        y_pred = self.predict(X)
+        
+        # Remove NaN predictions (from sequence padding)
+        mask = ~np.isnan(y_pred)
+        y_pred = y_pred[mask]
+        y_true = y[mask]
+        
+        metrics = {}
+        if self.task_type == 'regression':
+            metrics['mse'] = mean_squared_error(y_true, y_pred)
+            metrics['rmse'] = np.sqrt(metrics['mse'])
+            metrics['r2'] = r2_score(y_true, y_pred)
+        else:
+            metrics['accuracy'] = accuracy_score(y_true, y_pred)
+            metrics['f1'] = f1_score(y_true, y_pred)
+            
+        return metrics
+
 
 class GradientBoostingWrapper:
     """Wrapper for XGBoost model with consistent API."""

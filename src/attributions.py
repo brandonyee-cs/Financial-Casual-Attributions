@@ -279,8 +279,7 @@ class ShapleyValueMethod(AttributionMethod):
     """
     SHAP (SHapley Additive exPlanations) attribution method.
     
-    Computes attributions using Shapley values, which fairly distribute the model's
-    output among the input features.
+    Computes Shapley values using the SHAP library.
     """
     
     def __init__(self, model: Any, feature_names: Optional[List[str]] = None):
@@ -289,97 +288,120 @@ class ShapleyValueMethod(AttributionMethod):
         self.explainer = None
     
     def _create_explainer(self, X: np.ndarray) -> None:
-        """
-        Create SHAP explainer based on model type.
-        
-        Args:
-            X: Sample of input features
-        """
-        # Scale inputs
-        X_scaled = self.model.scaler.transform(X)
-        
-        # Check model type and create appropriate explainer
-        if hasattr(self.model, 'model') and hasattr(self.model.model, 'get_booster', False):
-            # For XGBoost models, use TreeExplainer
+        """Create SHAP explainer for the model."""
+        if isinstance(self.model.model, xgb.Booster):
+            # For XGBoost models
             self.explainer = shap.TreeExplainer(self.model.model)
         else:
-            # For PyTorch models, create a prediction function
+            # For other models (including PyTorch)
             def predict_fn(x):
-                x_tensor = torch.tensor(x, dtype=torch.float32)
-                with torch.no_grad():
-                    return self.model.model(x_tensor).numpy()
+                if isinstance(x, pd.DataFrame):
+                    x = x.values
+                return self.model.predict(x)
             
-            # Use KernelExplainer for black-box models
-            background = shap.kmeans(X_scaled, 10)
-            self.explainer = shap.KernelExplainer(predict_fn, background)
+            self.explainer = shap.KernelExplainer(predict_fn, X)
     
     def attribute(self, X: np.ndarray, y: Optional[np.ndarray] = None, 
                 **kwargs) -> np.ndarray:
         """
-        Compute SHAP values.
+        Compute SHAP attributions.
         
         Args:
             X: Input features
             y: Target labels (not used)
             
         Returns:
-            SHAP values
+            Attribution scores
         """
-        # Create explainer if not created yet
         if self.explainer is None:
             self._create_explainer(X)
         
-        # Scale inputs
-        X_scaled = self.model.scaler.transform(X)
-        
         # Compute SHAP values
-        shap_values = self.explainer.shap_values(X_scaled)
+        if isinstance(self.model.model, xgb.Booster):
+            # For XGBoost models
+            shap_values = self.explainer.shap_values(X)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[0]  # Take first class for binary classification
+        else:
+            # For other models
+            shap_values = self.explainer.shap_values(X)
         
-        # Convert to numpy array if needed
-        if isinstance(shap_values, list):
-            if len(shap_values) == 1:  # For regression or binary classification (single output)
-                shap_values = shap_values[0]
-            else:  # For multi-class (not supported in this implementation)
-                raise ValueError("Multi-class SHAP values not supported")
+        return np.array(shap_values)
+
+
+class XGBoostAttributionMethod(AttributionMethod):
+    """
+    Attribution method for XGBoost models using feature importance.
+    """
+    
+    def __init__(self, model: Any, feature_names: Optional[List[str]] = None):
+        """Initialize XGBoost attribution method."""
+        super().__init__(model, feature_names)
         
-        return shap_values
+        # Check if model is an XGBoost model
+        if not isinstance(self.model.model, xgb.Booster):
+            raise ValueError("XGBoost attribution method is only implemented for XGBoost models")
+    
+    def attribute(self, X: np.ndarray, y: Optional[np.ndarray] = None, 
+                **kwargs) -> np.ndarray:
+        """
+        Compute XGBoost attributions using feature importance.
+        
+        Args:
+            X: Input features
+            y: Target labels (not used)
+            
+        Returns:
+            Attribution scores
+        """
+        # Get feature importance scores
+        importance_type = kwargs.get('importance_type', 'gain')
+        importance_scores = self.model.model.get_score(importance_type=importance_type)
+        
+        # Convert to array format
+        attributions = np.zeros((len(X), len(self.feature_names)))
+        for i, feature in enumerate(self.feature_names):
+            if feature in importance_scores:
+                attributions[:, i] = importance_scores[feature]
+        
+        return attributions
 
 
 def compute_attributions(model: Any, X: np.ndarray, method_name: str,
                        feature_names: Optional[List[str]] = None,
                        **kwargs) -> pd.DataFrame:
     """
-    Compute attributions for a given model and method.
+    Compute attributions using specified method.
     
     Args:
         model: Trained model
         X: Input features
         method_name: Name of attribution method
         feature_names: List of feature names
-        **kwargs: Additional arguments for the attribution method
+        **kwargs: Additional arguments for attribution method
         
     Returns:
-        DataFrame with attribution scores
+        DataFrame with attributions
     """
     # Create attribution method
     if method_name == 'saliency':
-        method = SaliencyMap(model, feature_names)
+        attribution_method = SaliencyMap(model, feature_names)
     elif method_name == 'gradient_input':
-        method = GradientInputMethod(model, feature_names)
+        attribution_method = GradientInputMethod(model, feature_names)
     elif method_name == 'integrated_gradients':
-        method = IntegratedGradientsMethod(model, feature_names)
+        attribution_method = IntegratedGradientsMethod(model, feature_names)
     elif method_name == 'shap':
-        method = ShapleyValueMethod(model, feature_names)
+        attribution_method = ShapleyValueMethod(model, feature_names)
+    elif method_name == 'xgboost':
+        attribution_method = XGBoostAttributionMethod(model, feature_names)
     else:
         raise ValueError(f"Unsupported attribution method: {method_name}")
     
     # Compute attributions
-    attributions = method.attribute(X, **kwargs)
+    attributions = attribution_method.attribute(X, **kwargs)
     
     # Convert to DataFrame
-    attributions_df = method.get_attributions_df(X, attributions)
-    
-    return attributions_df
+    return attribution_method.get_attributions_df(X, attributions)
 
 
 if __name__ == "__main__":

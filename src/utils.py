@@ -7,6 +7,7 @@ import torch
 import yaml
 import json
 from typing import Dict, List, Optional, Union, Any, Tuple
+import numpy.core.multiarray
 
 
 def create_directories(base_dir: str = '.') -> Dict[str, str]:
@@ -182,7 +183,15 @@ def load_model(scenario_name: str, model_type: str = 'mlp', model_dir: str = './
     Returns:
         Loaded model
     """
-    from models import SimpleMLPModel, TimeSeriesLSTMModel, GradientBoostingWrapper
+    from src.models import SimpleMLPModel, TimeSeriesLSTMModel, GradientBoostingWrapper
+    from sklearn.preprocessing import StandardScaler
+    import torch.serialization
+    
+    # Add required classes to safe globals for PyTorch 2.6+
+    torch.serialization.add_safe_globals([
+        StandardScaler,
+        numpy.core.multiarray.scalar
+    ])
     
     # Define model path
     model_path = os.path.join(model_dir, f"{scenario_name}_{model_type}_model.pkl")

@@ -34,8 +34,8 @@ fi
 
 # Step 2: Train models for each scenario
 echo -e "\n===== Step 2: Training models ====="
+MODEL_TYPES=("mlp" "lstm" "xgboost")
 SCENARIOS=("asset_pricing" "credit_risk" "fraud_detection")
-MODEL_TYPES=("mlp" "xgboost")
 
 for scenario in "${SCENARIOS[@]}"; do
     for model_type in "${MODEL_TYPES[@]}"; do
@@ -53,23 +53,36 @@ fi
 
 # Step 3: Run attributions for each model and scenario
 echo -e "\n===== Step 3: Computing attributions ====="
-ATTRIBUTION_METHODS=("saliency" "gradient_input" "integrated_gradients" "shap")
 
-for scenario in "${SCENARIOS[@]}"; do
-    for model_type in "${MODEL_TYPES[@]}"; do
+# Define attribution methods based on model type
+declare -A MODEL_ATTRIBUTION_METHODS
+MODEL_ATTRIBUTION_METHODS["mlp"]=("saliency" "gradient_input" "integrated_gradients" "shap")
+MODEL_ATTRIBUTION_METHODS["lstm"]=("saliency" "gradient_input" "integrated_gradients" "shap")
+MODEL_ATTRIBUTION_METHODS["xgboost"]=("xgboost" "shap")
+
+# Compute attributions for each model and scenario
+echo "Computing attributions..."
+for model_type in "${MODEL_TYPES[@]}"; do
+    for scenario in "${SCENARIOS[@]}"; do
         echo "Computing attributions for $model_type model in $scenario scenario..."
-        python3 scripts/run_attributions.py --scenario="$scenario" --model_type="$model_type" \
-                                          --attribution_methods="${ATTRIBUTION_METHODS[*]}" \
-                                          --data_dir="$DATA_DIR" --model_dir="$MODELS_DIR" \
-                                          --results_dir="$RESULTS_DIR"
+        python3 scripts/run_attributions.py \
+            --model_type="$model_type" \
+            --scenario="$scenario" \
+            --data_dir="$DATA_DIR" \
+            --models_dir="$MODELS_DIR" \
+            --output_dir="$RESULTS_DIR" \
+            --attribution_methods "${MODEL_ATTRIBUTION_METHODS[$model_type]}" \
+            --n_samples=1000 \
+            --batch_size=32 \
+            --seed=42 \
+            --log_file="$LOG_FILE"
+        
+        if [ $? -ne 0 ]; then
+            echo "Error: Failed to compute attributions for $model_type model in $scenario scenario"
+            exit 1
+        fi
     done
 done
-
-# Check if attribution computation was successful
-if [ $? -ne 0 ]; then
-    echo "Error: Attribution computation failed. Exiting."
-    exit 1
-fi
 
 # Step 4: Evaluate faithfulness of attributions
 echo -e "\n===== Step 4: Evaluating causal faithfulness ====="
