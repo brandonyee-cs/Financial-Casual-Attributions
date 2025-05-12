@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Union, Any, Tuple
 import numpy.core.multiarray
 import logging
 import yaml
+from datetime import datetime
 
 #pl.Config.set_engine_affinity(engine="streaming")
 
@@ -136,7 +137,7 @@ def load_model(scenario_name: str, model_type: str = 'mlp', model_dir: str = './
     Returns:
         Loaded model
     """
-    from models import SimpleMLPModel, TimeSeriesLSTMModel, GradientBoostingWrapper
+    from src.models import SimpleMLPModel, TimeSeriesLSTMModel, GradientBoostingWrapper
     
     # Add required classes to safe globals for PyTorch 2.6+
     try:
@@ -251,7 +252,10 @@ class AttributionMethod:
         else:
             feature_names = self.feature_names
             
-        return pl.DataFrame(attributions, schema=feature_names)
+        # Create DataFrame with attributions (don't normalize here)
+        df = pl.DataFrame(attributions, schema=feature_names)
+        
+        return df
 
 
 class SaliencyMap(AttributionMethod):
@@ -450,7 +454,11 @@ class ShapleyValueMethod(AttributionMethod):
             # For other models
             shap_values = self.explainer.shap_values(X)
         
-        return np.array(shap_values)
+        # Convert to numpy array if it's not already
+        if not isinstance(shap_values, np.ndarray):
+            shap_values = np.array(shap_values)
+        
+        return shap_values
 
 
 class XGBoostAttributionMethod(AttributionMethod):
@@ -772,9 +780,16 @@ def plot_attribution_heatmap(attributions: pl.DataFrame,
     
     # Normalize attributions
     normalized_attrs = abs_attrs.select(sorted_features)
-    row_sums = normalized_attrs.sum(axis=1)
-    normalized_attrs = normalized_attrs.with_columns([
-        pl.col(col) / pl.when(row_sums > 0).then(row_sums).otherwise(1.0)
+    
+    # Calculate row sums (sum across all columns for each row)
+    # This creates a new column "row_sum" with the sum of all feature columns for each row
+    with_row_sums = normalized_attrs.with_columns(
+        pl.sum_horizontal(sorted_features).alias("row_sum")
+    )
+    
+    # Normalize by dividing each column by the row sum (avoid division by zero)
+    normalized_attrs = with_row_sums.select([
+        pl.col(col) / pl.when(pl.col("row_sum") > 0).then(pl.col("row_sum")).otherwise(1.0)
         for col in sorted_features
     ])
     
@@ -1254,7 +1269,7 @@ def generate_report(results_dir: str, output_dir: str, format: str = 'markdown')
             # Title and introduction
             f.write("# Causal Pitfalls of Feature Attributions in Financial Machine Learning Models\n\n")
             f.write("## Results Report\n\n")
-            f.write(f"*Generated on: {pl.datetime('now').dt.strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
+            f.write(f"*Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
             
             f.write("This document presents the key results from our experiments evaluating the causal faithfulness ")
             f.write("of various feature attribution methods in financial machine learning models.\n\n")
@@ -1307,16 +1322,20 @@ def generate_report(results_dir: str, output_dir: str, format: str = 'markdown')
                     f.write(f"| {scenario} | {model_type} | ")
                     if 'accuracy' in model_perf.columns:
                         accuracy_idx = model_perf.columns.index('accuracy')
-                        f.write(f"{row[accuracy_idx]:.4f} | ")
+                        accuracy_val = row[accuracy_idx]
+                        f.write(f"{accuracy_val:.4f} | " if accuracy_val is not None else "N/A | ")
                     if 'f1' in model_perf.columns:
                         f1_idx = model_perf.columns.index('f1')
-                        f.write(f"{row[f1_idx]:.4f} | ")
+                        f1_val = row[f1_idx]
+                        f.write(f"{f1_val:.4f} | " if f1_val is not None else "N/A | ")
                     if 'mse' in model_perf.columns:
                         mse_idx = model_perf.columns.index('mse')
-                        f.write(f"{row[mse_idx]:.4f} | ")
+                        mse_val = row[mse_idx]
+                        f.write(f"{mse_val:.4f} | " if mse_val is not None else "N/A | ")
                     if 'r2' in model_perf.columns:
                         r2_idx = model_perf.columns.index('r2')
-                        f.write(f"{row[r2_idx]:.4f} | ")
+                        r2_val = row[r2_idx]
+                        f.write(f"{r2_val:.4f} | " if r2_val is not None else "N/A | ")
                     f.write("\n")
                 
                 f.write("\n\n")
@@ -1584,7 +1603,7 @@ def generate_report(results_dir: str, output_dir: str, format: str = 'markdown')
             f.write("\\geometry{margin=1in}\n\n")
             
             f.write("\\title{Causal Pitfalls of Feature Attributions in Financial Machine Learning Models: Results Report}\n")
-            f.write(f"\\date{{{pl.datetime('now').dt.strftime('%Y-%m-%d')}}}\n")
+            f.write(f"\\date{{{datetime.now().strftime('%Y-%m-%d')}}}\n")
             f.write("\\author{}\n\n")
             
             f.write("\\begin{document}\n\n")
@@ -1627,16 +1646,20 @@ def generate_report(results_dir: str, output_dir: str, format: str = 'markdown')
                     f.write(f"{scenario} & {model_type} & ")
                     if 'accuracy' in model_perf.columns:
                         accuracy_idx = model_perf.columns.index('accuracy')
-                        f.write(f"{row[accuracy_idx]:.4f} & ")
+                        accuracy_val = row[accuracy_idx]
+                        f.write(f"{accuracy_val:.4f} & " if accuracy_val is not None else "N/A & ")
                     if 'f1' in model_perf.columns:
                         f1_idx = model_perf.columns.index('f1')
-                        f.write(f"{row[f1_idx]:.4f} & ")
+                        f1_val = row[f1_idx]
+                        f.write(f"{f1_val:.4f} & " if f1_val is not None else "N/A & ")
                     if 'mse' in model_perf.columns:
                         mse_idx = model_perf.columns.index('mse')
-                        f.write(f"{row[mse_idx]:.4f} & ")
+                        mse_val = row[mse_idx]
+                        f.write(f"{mse_val:.4f} & " if mse_val is not None else "N/A & ")
                     if 'r2' in model_perf.columns:
                         r2_idx = model_perf.columns.index('r2')
-                        f.write(f"{row[r2_idx]:.4f} & ")
+                        r2_val = row[r2_idx]
+                        f.write(f"{r2_val:.4f} & " if r2_val is not None else "N/A & ")
                     f.write("\\\\\n")
                 
                 f.write("\\bottomrule\n")
