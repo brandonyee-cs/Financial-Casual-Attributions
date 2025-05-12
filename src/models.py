@@ -1,5 +1,15 @@
+"""
+Module containing model classes for financial machine learning.
+
+This module implements different model types for the financial scenarios:
+- MLP: Simple neural network
+- LSTM: For time series data
+- XGBoost: Gradient boosting trees
+"""
+
+import os
 import numpy as np
-import pandas as pd
+import polars as pl
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,6 +19,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error, r2_score
 from typing import Tuple, Dict, List, Optional, Union, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+#pl.Config.set_engine_affinity(engine="streaming")
 
 class SimpleMLPModel:
     """Simple Multi-Layer Perceptron neural network."""
@@ -562,7 +577,8 @@ class GradientBoostingWrapper:
             'max_depth': 6,
             'subsample': 0.8,
             'colsample_bytree': 0.8,
-            'random_state': random_state
+            'random_state': random_state,
+            'eval_metric': 'rmse' if task_type == 'regression' else 'logloss'
         }
         
         # Update with user-specified parameters
@@ -606,8 +622,7 @@ class GradientBoostingWrapper:
         eval_set = [(X_val, y_val)]
         
         if verbose:
-            self.model.fit(X_train, y_train, eval_set=eval_set, eval_metric='rmse' if self.task_type == 'regression' else 'logloss',
-                         verbose=True)
+            self.model.fit(X_train, y_train, eval_set=eval_set, verbose=True)
         else:
             self.model.fit(X_train, y_train)
         
@@ -712,8 +727,15 @@ def train_model_for_scenario(scenario_name: str, model_type: str = 'mlp',
     os.makedirs(model_dir, exist_ok=True)
     
     # Load data
-    X = pd.read_csv(os.path.join(data_dir, f'{scenario_name}_features.csv')).values
-    y = pd.read_csv(os.path.join(data_dir, f'{scenario_name}_target.csv')).iloc[:, 0].values
+    features_file = os.path.join(data_dir, f'{scenario_name}_features.csv')
+    target_file = os.path.join(data_dir, f'{scenario_name}_target.csv')
+    
+    X_df = pl.read_csv(features_file)
+    y_df = pl.read_csv(target_file)
+    
+    # Convert to numpy arrays
+    X = X_df.to_numpy()
+    y = y_df.select(y_df.columns[0]).to_numpy().flatten()
     
     # Determine task type
     task_type = 'regression' if scenario_name == 'asset_pricing' else 'classification'

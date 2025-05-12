@@ -1,10 +1,17 @@
+"""
+Module for generating synthetic financial data with known causal ground truths.
+
+This module implements scenarios for asset pricing, credit risk, and fraud detection,
+each with a specific causal structure.
+"""
+
 import numpy as np
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import polars as pl
 import networkx as nx
 import matplotlib.pyplot as plt
 from typing import Tuple, Dict, List, Optional
 
+#pl.Config.set_engine_affinity(engine="streaming")
 
 class CausalScenario:
     """Base class for causal scenarios in finance."""
@@ -40,7 +47,7 @@ class CausalScenario:
         """Generate target variable based on causal features and confounders."""
         raise NotImplementedError
         
-    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
+    def generate_data(self) -> Tuple[pl.DataFrame, pl.Series, Dict]:
         """
         Generate synthetic data for the causal scenario.
         
@@ -61,8 +68,11 @@ class CausalScenario:
         y = self._generate_target(causal_features, confounders)
         
         # Create DataFrame and Series
-        X_df = pd.DataFrame(X, columns=self.feature_names)
-        y_series = pd.Series(y, name='target') # Default target name
+        X_df = pl.DataFrame(X, schema=self.feature_names)
+        
+        # Child classes might override target name
+        target_name = 'target'
+        y_series = pl.Series(name=target_name, values=y)
         
         # Create causal info dictionary
         # Note: Child classes might override y_series.name and the content of causal_info
@@ -218,21 +228,16 @@ class AssetPricingScenario(CausalScenario):
                                                                                 size=self.n_samples)
         return returns
 
-    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
-        X_df, _, causal_info_base = super().generate_data()
-        # Override target name and regenerate y_series with correct name
-        y = self._generate_target(X_df[causal_info_base['causal_features']].values, 
-                                  self._generate_confounders() if self.n_confounders > 0 else np.array([]).reshape(self.n_samples,0)) # Re-gen confounders for y if needed or pass from super
-        
-        # Re-call with explicit confounders
+    def generate_data(self) -> Tuple[pl.DataFrame, pl.Series, Dict]:
+        # Generate data with explicit confounders
         confounders = self._generate_confounders()
         causal_features_arr = self._generate_causal_features(confounders)
         spurious_features_arr = self._generate_spurious_features(confounders)
         X_arr = np.concatenate([causal_features_arr, spurious_features_arr], axis=1)
         y_arr = self._generate_target(causal_features_arr, confounders)
 
-        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
-        y_series = pd.Series(y_arr, name='return')
+        X_df = pl.DataFrame(X_arr, schema=self.feature_names)
+        y_series = pl.Series(name='return', values=y_arr)
 
         causal_info = {
             'causal_features': [name for i, name in enumerate(self.feature_names) 
@@ -373,24 +378,24 @@ class CreditRiskScenario(CausalScenario):
         
         return default
 
-    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
-        # Re-call with explicit confounders
+    def generate_data(self) -> Tuple[pl.DataFrame, pl.Series, Dict]:
+        # Generate data with explicit confounders
         confounders = self._generate_confounders()
         causal_features_arr = self._generate_causal_features(confounders)
         # n_proxy corresponds to n_spurious here
-        spurious_features_arr = self._generate_spurious_features(confounders) 
+        spurious_features_arr = self._generate_spurious_features(confounders)
         X_arr = np.concatenate([causal_features_arr, spurious_features_arr], axis=1)
         y_arr = self._generate_target(causal_features_arr, confounders)
 
-        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
-        y_series = pd.Series(y_arr, name='default')
+        X_df = pl.DataFrame(X_arr, schema=self.feature_names)
+        y_series = pl.Series(name='default', values=y_arr)
 
         causal_info = {
             'causal_features': [name for i, name in enumerate(self.feature_names) 
                                if i < self.n_causal],
             # These are proxy features, but match 'spurious_features' key for consistency from base
             'spurious_features': [name for i, name in enumerate(self.feature_names) 
-                                 if i >= self.n_causal], 
+                                 if i >= self.n_causal],
             'dag': self.dag
         }
         return X_df, y_series, causal_info
@@ -539,7 +544,7 @@ class FraudDetectionScenario(CausalScenario):
                                                                          size=self.n_samples)
         return indirect_features
     
-    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
+    def generate_data(self) -> Tuple[pl.DataFrame, pl.Series, Dict]:
         """Override to handle the special case where fraud affects indirect features."""
         # Generate data
         confounders = self._generate_confounders()
@@ -565,8 +570,8 @@ class FraudDetectionScenario(CausalScenario):
         X_arr = np.concatenate([causal_features, indirect_features], axis=1)
         
         # Create DataFrame and Series
-        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
-        y_series = pd.Series(fraud_target_array, name='fraud')
+        X_df = pl.DataFrame(X_arr, schema=self.feature_names)
+        y_series = pl.Series(name='fraud', values=fraud_target_array)
         
         # Create causal info dictionary
         causal_info = {
@@ -599,37 +604,46 @@ def generate_all_datasets(output_dir: str = './data',
     X_asset, y_asset, causal_info_asset = asset_scenario.generate_data()
     
     # Save asset pricing data
-    X_asset.to_csv(os.path.join(output_dir, 'asset_pricing_features.csv'), index=False)
-    y_asset.to_csv(os.path.join(output_dir, 'asset_pricing_target.csv'), index=False, header=True) # ensure header for series
+    X_asset.write_csv(os.path.join(output_dir, 'asset_pricing_features.csv'))
+    y_df_asset = pl.DataFrame({y_asset.name: y_asset})
+    y_df_asset.write_csv(os.path.join(output_dir, 'asset_pricing_target.csv'))
+    
     # Save causal info (excluding DAG which isn't easily serializable)
-    pd.DataFrame({
+    causal_info_df_asset = pl.DataFrame({
         'feature': X_asset.columns,
         'is_causal': [feat in causal_info_asset['causal_features'] for feat in X_asset.columns]
-    }).to_csv(os.path.join(output_dir, 'asset_pricing_causal_info.csv'), index=False)
+    })
+    causal_info_df_asset.write_csv(os.path.join(output_dir, 'asset_pricing_causal_info.csv'))
     
     # Generate credit risk data
     credit_scenario = CreditRiskScenario(n_samples=n_samples, random_state=random_state)
     X_credit, y_credit, causal_info_credit = credit_scenario.generate_data()
     
     # Save credit risk data
-    X_credit.to_csv(os.path.join(output_dir, 'credit_risk_features.csv'), index=False)
-    y_credit.to_csv(os.path.join(output_dir, 'credit_risk_target.csv'), index=False, header=True)
-    pd.DataFrame({
+    X_credit.write_csv(os.path.join(output_dir, 'credit_risk_features.csv'))
+    y_df_credit = pl.DataFrame({y_credit.name: y_credit})
+    y_df_credit.write_csv(os.path.join(output_dir, 'credit_risk_target.csv'))
+    
+    causal_info_df_credit = pl.DataFrame({
         'feature': X_credit.columns,
         'is_causal': [feat in causal_info_credit['causal_features'] for feat in X_credit.columns]
-    }).to_csv(os.path.join(output_dir, 'credit_risk_causal_info.csv'), index=False)
+    })
+    causal_info_df_credit.write_csv(os.path.join(output_dir, 'credit_risk_causal_info.csv'))
     
     # Generate fraud detection data
     fraud_scenario = FraudDetectionScenario(n_samples=n_samples, random_state=random_state)
     X_fraud, y_fraud, causal_info_fraud = fraud_scenario.generate_data()
     
     # Save fraud detection data
-    X_fraud.to_csv(os.path.join(output_dir, 'fraud_detection_features.csv'), index=False)
-    y_fraud.to_csv(os.path.join(output_dir, 'fraud_detection_target.csv'), index=False, header=True)
-    pd.DataFrame({
+    X_fraud.write_csv(os.path.join(output_dir, 'fraud_detection_features.csv'))
+    y_df_fraud = pl.DataFrame({y_fraud.name: y_fraud})
+    y_df_fraud.write_csv(os.path.join(output_dir, 'fraud_detection_target.csv'))
+    
+    causal_info_df_fraud = pl.DataFrame({
         'feature': X_fraud.columns,
         'is_causal': [feat in causal_info_fraud['causal_features'] for feat in X_fraud.columns]
-    }).to_csv(os.path.join(output_dir, 'fraud_detection_causal_info.csv'), index=False)
+    })
+    causal_info_df_fraud.write_csv(os.path.join(output_dir, 'fraud_detection_causal_info.csv'))
     
     print(f"All datasets generated and saved to {output_dir}")
 
@@ -645,7 +659,7 @@ if __name__ == "__main__":
     
     print("\nAsset Pricing Dataset (Test Sample):")
     print(f"X shape: {X.shape}")
-    print(f"y name: {y.name}, y shape: {y.shape}")
+    print(f"y name: {y.name}, y shape: {len(y)}")
     print("Causal features:", causal_info['causal_features'])
     print("Spurious features:", causal_info['spurious_features'])
     print(X.head())
@@ -656,19 +670,18 @@ if __name__ == "__main__":
     credit_scenario_test.plot_dag()
     print("\nCredit Risk Dataset (Test Sample):")
     print(f"X shape: {X_c.shape}")
-    print(f"y name: {y_c.name}, y shape: {y_c.shape}")
+    print(f"y name: {y_c.name}, y shape: {len(y_c)}")
     print("Causal features:", causal_info_c['causal_features'])
     print("Proxy (Spurious) features:", causal_info_c['spurious_features'])
     print(X_c.head())
     print(y_c.head())
-
 
     fraud_scenario_test = FraudDetectionScenario(n_samples=100, n_causal=1, n_indirect=1, n_confounders=1)
     X_f, y_f, causal_info_f = fraud_scenario_test.generate_data()
     fraud_scenario_test.plot_dag()
     print("\nFraud Detection Dataset (Test Sample):")
     print(f"X shape: {X_f.shape}")
-    print(f"y name: {y_f.name}, y shape: {y_f.shape}")
+    print(f"y name: {y_f.name}, y shape: {len(y_f)}")
     print("Causal features:", causal_info_f['causal_features'])
     print("Indirect features:", causal_info_f['indirect_features'])
     print(X_f.head())
