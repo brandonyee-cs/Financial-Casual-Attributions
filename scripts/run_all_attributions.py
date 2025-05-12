@@ -33,14 +33,6 @@ def run_attributions(data_dir, model_dir, output_dir, scenarios, model_types,
                     attribution_methods, n_samples, random_state, plot=True):
     """Run attribution computation for all combinations of scenarios and model types."""
     
-    # Add safe globals for PyTorch 2.6
-    torch.serialization.add_safe_globals([
-        np.dtype,
-        np.core.multiarray.scalar,
-        np.core.multiarray._reconstruct,
-        np.core.multiarray._multiarray_umath
-    ])
-    
     # Define attribution methods for each model type
     model_attribution_methods = {
         'mlp': ['saliency', 'gradient_input', 'integrated_gradients'],
