@@ -62,14 +62,15 @@ class CausalScenario:
         
         # Create DataFrame and Series
         X_df = pd.DataFrame(X, columns=self.feature_names)
-        y_series = pd.Series(y, name='target')
+        y_series = pd.Series(y, name='target') # Default target name
         
         # Create causal info dictionary
+        # Note: Child classes might override y_series.name and the content of causal_info
         causal_info = {
             'causal_features': [name for i, name in enumerate(self.feature_names) 
                                if i < causal_features.shape[1]],
             'spurious_features': [name for i, name in enumerate(self.feature_names) 
-                                 if i >= causal_features.shape[1]],
+                                 if i >= causal_features.shape[1]], # This will be 'indirect_features' for Fraud
             'dag': self.dag
         }
         
@@ -139,17 +140,17 @@ class AssetPricingScenario(CausalScenario):
         self.dag.add_node('return')
         
         # Add edges
-        for z in range(self.n_confounders):
+        for z_idx in range(self.n_confounders):
             # Confounders affect causal features
             for i in range(self.n_causal):
-                self.dag.add_edge(f'Z{z}', f'fundamental_{i}')
+                self.dag.add_edge(f'Z{z_idx}', f'fundamental_{i}')
             
             # Confounders affect spurious features
             for i in range(self.n_spurious):
-                self.dag.add_edge(f'Z{z}', f'spurious_{i}')
+                self.dag.add_edge(f'Z{z_idx}', f'spurious_{i}')
             
             # Confounders affect return directly
-            self.dag.add_edge(f'Z{z}', 'return')
+            self.dag.add_edge(f'Z{z_idx}', 'return')
         
         # Causal features affect return
         for i in range(self.n_causal):
@@ -168,13 +169,14 @@ class AssetPricingScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Add confounder effect
-            confounder_effect = np.sum(confounders * self.rng.uniform(0.3, 0.7, 
-                                                                    size=self.n_confounders), axis=1)
+            confounder_effect = 0
+            if self.n_confounders > 0:
+                confounder_weights = self.rng.uniform(0.3, 0.7, size=self.n_confounders)
+                confounder_effect = np.sum(confounders * confounder_weights, axis=1)
             
             # Combine with some noise
             causal_features[:, i] = base + confounder_effect + self.rng.normal(0, self.noise_level, 
                                                                              size=self.n_samples)
-        
         return causal_features
     
     def _generate_spurious_features(self, confounders: np.ndarray) -> np.ndarray:
@@ -186,30 +188,60 @@ class AssetPricingScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Strong effect from confounders (that's why they correlate with return)
-            confounder_effect = np.sum(confounders * self.rng.uniform(0.5, 0.9, 
-                                                                    size=self.n_confounders), axis=1)
+            confounder_effect = 0
+            if self.n_confounders > 0:
+                confounder_weights = self.rng.uniform(0.5, 0.9, size=self.n_confounders)
+                confounder_effect = np.sum(confounders * confounder_weights, axis=1)
             
             # Combine with some noise
             spurious_features[:, i] = base + confounder_effect + self.rng.normal(0, self.noise_level, 
                                                                               size=self.n_samples)
-        
         return spurious_features
     
     def _generate_target(self, causal_features: np.ndarray, 
                         confounders: np.ndarray) -> np.ndarray:
         """Generate stock returns."""
         # Base return from causal features
-        causal_effect = np.sum(causal_features * self.rng.uniform(0.5, 1.0, size=self.n_causal), axis=1)
+        causal_effect = 0
+        if self.n_causal > 0:
+            causal_weights = self.rng.uniform(0.5, 1.0, size=self.n_causal)
+            causal_effect = np.sum(causal_features * causal_weights, axis=1)
         
         # Direct confounder effect on returns
-        confounder_effect = np.sum(confounders * self.rng.uniform(0.4, 0.8, 
-                                                                size=self.n_confounders), axis=1)
+        confounder_effect_on_target = 0
+        if self.n_confounders > 0:
+            confounder_target_weights = self.rng.uniform(0.4, 0.8, size=self.n_confounders)
+            confounder_effect_on_target = np.sum(confounders * confounder_target_weights, axis=1)
         
         # Combine with some noise to get final return
-        returns = causal_effect + confounder_effect + self.rng.normal(0, self.noise_level, 
-                                                                   size=self.n_samples)
-        
+        returns = causal_effect + confounder_effect_on_target + self.rng.normal(0, self.noise_level, 
+                                                                                size=self.n_samples)
         return returns
+
+    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
+        X_df, _, causal_info_base = super().generate_data()
+        # Override target name and regenerate y_series with correct name
+        y = self._generate_target(X_df[causal_info_base['causal_features']].values, 
+                                  self._generate_confounders() if self.n_confounders > 0 else np.array([]).reshape(self.n_samples,0)) # Re-gen confounders for y if needed or pass from super
+        
+        # Re-call with explicit confounders
+        confounders = self._generate_confounders()
+        causal_features_arr = self._generate_causal_features(confounders)
+        spurious_features_arr = self._generate_spurious_features(confounders)
+        X_arr = np.concatenate([causal_features_arr, spurious_features_arr], axis=1)
+        y_arr = self._generate_target(causal_features_arr, confounders)
+
+        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
+        y_series = pd.Series(y_arr, name='return')
+
+        causal_info = {
+            'causal_features': [name for i, name in enumerate(self.feature_names) 
+                               if i < self.n_causal],
+            'spurious_features': [name for i, name in enumerate(self.feature_names) 
+                                 if i >= self.n_causal],
+            'dag': self.dag
+        }
+        return X_df, y_series, causal_info
 
 
 class CreditRiskScenario(CausalScenario):
@@ -219,7 +251,7 @@ class CreditRiskScenario(CausalScenario):
     Y: Loan default probability (target)
     X_causal_behavioral: True causal factors (e.g., missed payments)
     Z_confounder_socioeconomic: Factors like unemployment rate
-    X_proxy_bias: Features correlated with protected attributes
+    X_proxy_bias: Features correlated with protected attributes (spurious features)
     """
     
     def __init__(self, n_samples: int = 10000, random_state: int = 42,
@@ -228,7 +260,7 @@ class CreditRiskScenario(CausalScenario):
         """Initialize the credit risk scenario."""
         super().__init__(n_samples, random_state)
         self.n_causal = n_causal
-        self.n_proxy = n_proxy
+        self.n_proxy = n_proxy # n_spurious in base class context
         self.n_confounders = n_confounders
         self.noise_level = noise_level
         
@@ -256,17 +288,17 @@ class CreditRiskScenario(CausalScenario):
         self.dag.add_node('default')
         
         # Add edges
-        for z in range(self.n_confounders):
+        for z_idx in range(self.n_confounders):
             # Confounders affect behavioral features
             for i in range(self.n_causal):
-                self.dag.add_edge(f'Z{z}', f'behavioral_{i}')
+                self.dag.add_edge(f'Z{z_idx}', f'behavioral_{i}')
             
             # Confounders affect proxy features
             for i in range(self.n_proxy):
-                self.dag.add_edge(f'Z{z}', f'proxy_{i}')
+                self.dag.add_edge(f'Z{z_idx}', f'proxy_{i}')
             
             # Confounders affect default directly
-            self.dag.add_edge(f'Z{z}', 'default')
+            self.dag.add_edge(f'Z{z_idx}', 'default')
         
         # Behavioral features affect default
         for i in range(self.n_causal):
@@ -285,13 +317,14 @@ class CreditRiskScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Add confounder effect (socioeconomic factors affect behavior)
-            confounder_effect = np.sum(confounders * self.rng.uniform(0.3, 0.7, 
-                                                                    size=self.n_confounders), axis=1)
+            confounder_effect = 0
+            if self.n_confounders > 0:
+                confounder_weights = self.rng.uniform(0.3, 0.7, size=self.n_confounders)
+                confounder_effect = np.sum(confounders * confounder_weights, axis=1)
             
             # Combine with some noise
             causal_features[:, i] = base + confounder_effect + self.rng.normal(0, self.noise_level, 
                                                                              size=self.n_samples)
-        
         return causal_features
     
     def _generate_spurious_features(self, confounders: np.ndarray) -> np.ndarray:
@@ -303,36 +336,64 @@ class CreditRiskScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Strong effect from confounders
-            confounder_effect = np.sum(confounders * self.rng.uniform(0.6, 0.9, 
-                                                                    size=self.n_confounders), axis=1)
+            confounder_effect = 0
+            if self.n_confounders > 0:
+                confounder_weights = self.rng.uniform(0.6, 0.9, size=self.n_confounders)
+                confounder_effect = np.sum(confounders * confounder_weights, axis=1)
             
             # Combine with some noise
             proxy_features[:, i] = base + confounder_effect + self.rng.normal(0, self.noise_level, 
                                                                            size=self.n_samples)
-        
         return proxy_features
     
     def _generate_target(self, causal_features: np.ndarray, 
                         confounders: np.ndarray) -> np.ndarray:
         """Generate loan default probability."""
         # Effect from behavioral features
-        behavioral_effect = np.sum(causal_features * self.rng.uniform(0.6, 1.2, size=self.n_causal), axis=1)
+        behavioral_effect = 0
+        if self.n_causal > 0:
+            behavioral_weights = self.rng.uniform(0.6, 1.2, size=self.n_causal)
+            behavioral_effect = np.sum(causal_features * behavioral_weights, axis=1)
         
         # Direct confounder effect
-        confounder_effect = np.sum(confounders * self.rng.uniform(0.4, 0.8, 
-                                                                size=self.n_confounders), axis=1)
+        confounder_effect_on_target = 0
+        if self.n_confounders > 0:
+            confounder_target_weights = self.rng.uniform(0.4, 0.8, size=self.n_confounders)
+            confounder_effect_on_target = np.sum(confounders * confounder_target_weights, axis=1)
         
         # Combine effects with noise
-        logits = behavioral_effect + confounder_effect + self.rng.normal(0, self.noise_level, 
+        logits = behavioral_effect + confounder_effect_on_target + self.rng.normal(0, self.noise_level, 
                                                                       size=self.n_samples)
         
         # Convert to probability using sigmoid
         prob_default = 1 / (1 + np.exp(-logits))
         
         # Binary outcome (default/no default)
-        default = (prob_default > 0.5).astype(int)
+        default = (prob_default > 0.5).astype(int) # Standard threshold
         
         return default
+
+    def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
+        # Re-call with explicit confounders
+        confounders = self._generate_confounders()
+        causal_features_arr = self._generate_causal_features(confounders)
+        # n_proxy corresponds to n_spurious here
+        spurious_features_arr = self._generate_spurious_features(confounders) 
+        X_arr = np.concatenate([causal_features_arr, spurious_features_arr], axis=1)
+        y_arr = self._generate_target(causal_features_arr, confounders)
+
+        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
+        y_series = pd.Series(y_arr, name='default')
+
+        causal_info = {
+            'causal_features': [name for i, name in enumerate(self.feature_names) 
+                               if i < self.n_causal],
+            # These are proxy features, but match 'spurious_features' key for consistency from base
+            'spurious_features': [name for i, name in enumerate(self.feature_names) 
+                                 if i >= self.n_causal], 
+            'dag': self.dag
+        }
+        return X_df, y_series, causal_info
 
 
 class FraudDetectionScenario(CausalScenario):
@@ -351,7 +412,7 @@ class FraudDetectionScenario(CausalScenario):
         """Initialize the fraud detection scenario."""
         super().__init__(n_samples, random_state)
         self.n_causal = n_causal
-        self.n_indirect = n_indirect
+        self.n_indirect = n_indirect # These are the "spurious" features in base class context
         self.n_confounders = n_confounders
         self.fraud_rate = fraud_rate
         self.noise_level = noise_level
@@ -380,13 +441,13 @@ class FraudDetectionScenario(CausalScenario):
         self.dag.add_node('fraud')
         
         # Add edges
-        for z in range(self.n_confounders):
+        for z_idx in range(self.n_confounders):
             # Confounders affect anomaly features
             for i in range(self.n_causal):
-                self.dag.add_edge(f'Z{z}', f'anomaly_{i}')
+                self.dag.add_edge(f'Z{z_idx}', f'anomaly_{i}')
             
             # Confounders affect fraud directly
-            self.dag.add_edge(f'Z{z}', 'fraud')
+            self.dag.add_edge(f'Z{z_idx}', 'fraud')
         
         # Anomaly features cause fraud
         for i in range(self.n_causal):
@@ -409,27 +470,33 @@ class FraudDetectionScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Add confounder effect
-            confounder_effect = np.sum(confounders * self.rng.uniform(0.2, 0.5, 
-                                                                    size=self.n_confounders), axis=1)
+            confounder_effect = 0
+            if self.n_confounders > 0:
+                confounder_weights = self.rng.uniform(0.2, 0.5, size=self.n_confounders)
+                confounder_effect = np.sum(confounders * confounder_weights, axis=1)
             
             # Combine with noise
             anomaly_features[:, i] = base + confounder_effect + self.rng.normal(0, self.noise_level, 
                                                                              size=self.n_samples)
-        
         return anomaly_features
     
     def _generate_target(self, causal_features: np.ndarray, 
                         confounders: np.ndarray) -> np.ndarray:
         """Generate fraud indicator (before generating indirect features)."""
         # Effect from anomaly features
-        anomaly_effect = np.sum(causal_features * self.rng.uniform(0.8, 1.5, size=self.n_causal), axis=1)
+        anomaly_effect = 0
+        if self.n_causal > 0:
+            anomaly_weights = self.rng.uniform(0.8, 1.5, size=self.n_causal)
+            anomaly_effect = np.sum(causal_features * anomaly_weights, axis=1)
         
         # Direct confounder effect
-        confounder_effect = np.sum(confounders * self.rng.uniform(0.3, 0.6, 
-                                                                size=self.n_confounders), axis=1)
+        confounder_effect_on_target = 0
+        if self.n_confounders > 0:
+            confounder_target_weights = self.rng.uniform(0.3, 0.6, size=self.n_confounders)
+            confounder_effect_on_target = np.sum(confounders * confounder_target_weights, axis=1)
         
         # Combine with noise
-        logits = anomaly_effect + confounder_effect + self.rng.normal(0, self.noise_level, 
+        logits = anomaly_effect + confounder_effect_on_target + self.rng.normal(0, self.noise_level, 
                                                                     size=self.n_samples)
         
         # Convert to probability
@@ -442,9 +509,19 @@ class FraudDetectionScenario(CausalScenario):
         return fraud
     
     def _generate_spurious_features(self, confounders: np.ndarray) -> np.ndarray:
-        """Generate indirect indicators (consequences of fraud)."""
-        # First generate fraud indicator
-        fraud = self._generate_target(self._generate_causal_features(confounders), confounders)
+        """
+        Generate indirect indicators (consequences of fraud).
+        This method is called by the base class's generate_data if not overridden.
+        For FraudDetectionScenario, generate_data is overridden to correctly sequence
+        target generation before indirect feature generation.
+        This implementation here is for completeness if one were to call it, but it's
+        less efficient as it recalculates causal_features and target.
+        The primary logic is in the overridden generate_data method.
+        """
+        # First generate fraud indicator (re-calculating for this method's scope)
+        # This is redundant if called from the main overridden generate_data flow
+        temp_causal_features = self._generate_causal_features(confounders)
+        fraud = self._generate_target(temp_causal_features, confounders)
         
         # Then generate indirect features based on fraud
         indirect_features = np.zeros((self.n_samples, self.n_indirect))
@@ -454,12 +531,12 @@ class FraudDetectionScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Strong effect from fraud (since these are consequences)
-            fraud_effect = fraud * self.rng.uniform(1.0, 2.0)
+            fraud_effect_strength = self.rng.uniform(1.0, 2.0)
+            fraud_effect = fraud * fraud_effect_strength # fraud is 0 or 1
             
             # Add some noise
             indirect_features[:, i] = base + fraud_effect + self.rng.normal(0, self.noise_level, 
                                                                          size=self.n_samples)
-        
         return indirect_features
     
     def generate_data(self) -> Tuple[pd.DataFrame, pd.Series, Dict]:
@@ -467,9 +544,9 @@ class FraudDetectionScenario(CausalScenario):
         # Generate data
         confounders = self._generate_confounders()
         causal_features = self._generate_causal_features(confounders)
-        fraud = self._generate_target(causal_features, confounders)
+        fraud_target_array = self._generate_target(causal_features, confounders)
         
-        # Generate indirect features based on fraud
+        # Generate indirect features based on the generated fraud_target_array
         indirect_features = np.zeros((self.n_samples, self.n_indirect))
         
         for i in range(self.n_indirect):
@@ -477,25 +554,26 @@ class FraudDetectionScenario(CausalScenario):
             base = self.rng.normal(0, 1, size=self.n_samples)
             
             # Strong effect from fraud (since these are consequences)
-            fraud_effect = fraud * self.rng.uniform(1.0, 2.0)
+            fraud_effect_strength = self.rng.uniform(1.0, 2.0) # Random strength for this feature
+            fraud_effect = fraud_target_array * fraud_effect_strength
             
             # Add some noise
             indirect_features[:, i] = base + fraud_effect + self.rng.normal(0, self.noise_level, 
                                                                          size=self.n_samples)
         
         # Combine features
-        X = np.concatenate([causal_features, indirect_features], axis=1)
+        X_arr = np.concatenate([causal_features, indirect_features], axis=1)
         
         # Create DataFrame and Series
-        X_df = pd.DataFrame(X, columns=self.feature_names)
-        y_series = pd.Series(fraud, name='fraud')
+        X_df = pd.DataFrame(X_arr, columns=self.feature_names)
+        y_series = pd.Series(fraud_target_array, name='fraud')
         
         # Create causal info dictionary
         causal_info = {
             'causal_features': [name for i, name in enumerate(self.feature_names) 
-                               if i < causal_features.shape[1]],
+                               if i < self.n_causal],
             'indirect_features': [name for i, name in enumerate(self.feature_names) 
-                                 if i >= causal_features.shape[1]],
+                                 if i >= self.n_causal], # These are the "indirect" ones
             'dag': self.dag
         }
         
@@ -522,7 +600,7 @@ def generate_all_datasets(output_dir: str = './data',
     
     # Save asset pricing data
     X_asset.to_csv(os.path.join(output_dir, 'asset_pricing_features.csv'), index=False)
-    y_asset.to_csv(os.path.join(output_dir, 'asset_pricing_target.csv'), index=False)
+    y_asset.to_csv(os.path.join(output_dir, 'asset_pricing_target.csv'), index=False, header=True) # ensure header for series
     # Save causal info (excluding DAG which isn't easily serializable)
     pd.DataFrame({
         'feature': X_asset.columns,
@@ -535,7 +613,7 @@ def generate_all_datasets(output_dir: str = './data',
     
     # Save credit risk data
     X_credit.to_csv(os.path.join(output_dir, 'credit_risk_features.csv'), index=False)
-    y_credit.to_csv(os.path.join(output_dir, 'credit_risk_target.csv'), index=False)
+    y_credit.to_csv(os.path.join(output_dir, 'credit_risk_target.csv'), index=False, header=True)
     pd.DataFrame({
         'feature': X_credit.columns,
         'is_causal': [feat in causal_info_credit['causal_features'] for feat in X_credit.columns]
@@ -547,7 +625,7 @@ def generate_all_datasets(output_dir: str = './data',
     
     # Save fraud detection data
     X_fraud.to_csv(os.path.join(output_dir, 'fraud_detection_features.csv'), index=False)
-    y_fraud.to_csv(os.path.join(output_dir, 'fraud_detection_target.csv'), index=False)
+    y_fraud.to_csv(os.path.join(output_dir, 'fraud_detection_target.csv'), index=False, header=True)
     pd.DataFrame({
         'feature': X_fraud.columns,
         'is_causal': [feat in causal_info_fraud['causal_features'] for feat in X_fraud.columns]
@@ -558,15 +636,40 @@ def generate_all_datasets(output_dir: str = './data',
 
 if __name__ == "__main__":
     # Example usage
-    generate_all_datasets()
+    generate_all_datasets(n_samples=1000) # Smaller sample for quick test
     
     # Example of generating and visualizing a specific scenario
-    asset_scenario = AssetPricingScenario(n_samples=1000)
-    X, y, causal_info = asset_scenario.generate_data()
-    asset_scenario.plot_dag()
+    asset_scenario_test = AssetPricingScenario(n_samples=100, n_causal=1, n_spurious=1, n_confounders=1)
+    X, y, causal_info = asset_scenario_test.generate_data()
+    asset_scenario_test.plot_dag()
     
-    print("Asset Pricing Dataset:")
+    print("\nAsset Pricing Dataset (Test Sample):")
     print(f"X shape: {X.shape}")
-    print(f"y shape: {y.shape}")
+    print(f"y name: {y.name}, y shape: {y.shape}")
     print("Causal features:", causal_info['causal_features'])
     print("Spurious features:", causal_info['spurious_features'])
+    print(X.head())
+    print(y.head())
+
+    credit_scenario_test = CreditRiskScenario(n_samples=100, n_causal=1, n_proxy=1, n_confounders=1)
+    X_c, y_c, causal_info_c = credit_scenario_test.generate_data()
+    credit_scenario_test.plot_dag()
+    print("\nCredit Risk Dataset (Test Sample):")
+    print(f"X shape: {X_c.shape}")
+    print(f"y name: {y_c.name}, y shape: {y_c.shape}")
+    print("Causal features:", causal_info_c['causal_features'])
+    print("Proxy (Spurious) features:", causal_info_c['spurious_features'])
+    print(X_c.head())
+    print(y_c.head())
+
+
+    fraud_scenario_test = FraudDetectionScenario(n_samples=100, n_causal=1, n_indirect=1, n_confounders=1)
+    X_f, y_f, causal_info_f = fraud_scenario_test.generate_data()
+    fraud_scenario_test.plot_dag()
+    print("\nFraud Detection Dataset (Test Sample):")
+    print(f"X shape: {X_f.shape}")
+    print(f"y name: {y_f.name}, y shape: {y_f.shape}")
+    print("Causal features:", causal_info_f['causal_features'])
+    print("Indirect features:", causal_info_f['indirect_features'])
+    print(X_f.head())
+    print(y_f.head())

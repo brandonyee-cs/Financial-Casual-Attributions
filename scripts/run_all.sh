@@ -24,7 +24,7 @@ echo "Base directory: $BASE_DIR"
 
 # Step 1: Generate data
 echo -e "\n===== Step 1: Generating synthetic financial data ====="
-python scripts/generate_data.py --output_dir="$DATA_DIR" --n_samples=10000
+python3 scripts/generate_data.py --output_dir="$DATA_DIR" --n_samples=10000
 
 # Check if data generation was successful
 if [ $? -ne 0 ]; then
@@ -40,7 +40,7 @@ MODEL_TYPES=("mlp" "xgboost")
 for scenario in "${SCENARIOS[@]}"; do
     for model_type in "${MODEL_TYPES[@]}"; do
         echo "Training $model_type model for $scenario scenario..."
-        python scripts/train_models.py --scenario="$scenario" --model_type="$model_type" \
+        python3 scripts/train_models.py --scenario="$scenario" --model_type="$model_type" \
                                       --data_dir="$DATA_DIR" --model_dir="$MODELS_DIR"
     done
 done
@@ -58,7 +58,7 @@ ATTRIBUTION_METHODS=("saliency" "gradient_input" "integrated_gradients" "shap")
 for scenario in "${SCENARIOS[@]}"; do
     for model_type in "${MODEL_TYPES[@]}"; do
         echo "Computing attributions for $model_type model in $scenario scenario..."
-        python scripts/run_attributions.py --scenario="$scenario" --model_type="$model_type" \
+        python3 scripts/run_attributions.py --scenario="$scenario" --model_type="$model_type" \
                                           --attribution_methods="${ATTRIBUTION_METHODS[*]}" \
                                           --data_dir="$DATA_DIR" --model_dir="$MODELS_DIR" \
                                           --results_dir="$RESULTS_DIR"
@@ -73,7 +73,7 @@ fi
 
 # Step 4: Evaluate faithfulness of attributions
 echo -e "\n===== Step 4: Evaluating causal faithfulness ====="
-python scripts/evaluate_faithfulness.py --data_dir="$DATA_DIR" --results_dir="$RESULTS_DIR" \
+python3 scripts/evaluate_faithfulness.py --data_dir="$DATA_DIR" --results_dir="$RESULTS_DIR" \
                                        --plots_dir="$PLOTS_DIR"
 
 # Check if evaluation was successful
