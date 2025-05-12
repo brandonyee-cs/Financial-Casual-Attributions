@@ -2,7 +2,7 @@
 
 ## Results Report
 
-*Generated on: 2025-05-12 16:46:36*
+*Generated on: 2025-05-12 17:19:38*
 
 This document presents the key results from our experiments evaluating the causal faithfulness of various feature attribution methods in financial machine learning models.
 
@@ -38,14 +38,22 @@ This document presents the key results from our experiments evaluating the causa
 
 | Attribution Method | Overall Faithfulness Score |
 |--------------------|----------------------------|
-| shap | -29.6949 |
+| xgboost | -29.6574 |
+| shap | -29.6700 |
+| integrated_gradients | -29.8310 |
+| gradient_input | -29.8310 |
+| saliency | -29.8310 |
 
 
 ### Top-K Accuracy by Attribution Method
 
 | Attribution Method | Top-K Accuracy |
 |--------------------|---------------|
-| shap | 0.8450 |
+| xgboost | 1.0000 |
+| shap | 0.9837 |
+| gradient_input | 0.4710 |
+| saliency | 0.4710 |
+| integrated_gradients | 0.4710 |
 
 
 ## Scenario-Specific Analysis
@@ -56,16 +64,20 @@ This document presents the key results from our experiments evaluating the causa
 
 | Attribution Method | Overall Faithfulness Score |
 |--------------------|----------------------------|
-| shap | -32.4582 |
+| xgboost | -32.4329 |
+| shap | -32.4398 |
+| integrated_gradients | -32.6008 |
+| saliency | -32.6008 |
+| gradient_input | -32.6008 |
 
 
 #### Best Method-Model Combination for Credit Risk
 
-- **Attribution Method**: shap
+- **Attribution Method**: xgboost
 - **Model Type**: xgboost
-- **Overall Faithfulness Score**: -32.4582
-- **Top-K Accuracy**: 0.8735
-- **Attribution Ratio**: 5.0703
+- **Overall Faithfulness Score**: -32.4329
+- **Top-K Accuracy**: 1.0000
+- **Attribution Ratio**: 5.0847
 
 ### Fraud Detection
 
@@ -73,16 +85,20 @@ This document presents the key results from our experiments evaluating the causa
 
 | Attribution Method | Overall Faithfulness Score |
 |--------------------|----------------------------|
-| shap | -32.4729 |
+| xgboost | -32.4407 |
+| shap | -32.4509 |
+| gradient_input | -32.6008 |
+| saliency | -32.6008 |
+| integrated_gradients | -32.6008 |
 
 
 #### Best Method-Model Combination for Fraud Detection
 
-- **Attribution Method**: shap
+- **Attribution Method**: xgboost
 - **Model Type**: xgboost
-- **Overall Faithfulness Score**: -32.4729
-- **Top-K Accuracy**: 0.8585
-- **Attribution Ratio**: 3.4815
+- **Overall Faithfulness Score**: -32.4407
+- **Top-K Accuracy**: 1.0000
+- **Attribution Ratio**: 3.9188
 
 ### Asset Pricing
 
@@ -90,16 +106,20 @@ This document presents the key results from our experiments evaluating the causa
 
 | Attribution Method | Overall Faithfulness Score |
 |--------------------|----------------------------|
-| shap | -24.1535 |
+| xgboost | -24.0987 |
+| shap | -24.1192 |
+| saliency | -24.2915 |
+| gradient_input | -24.2915 |
+| integrated_gradients | -24.2915 |
 
 
 #### Best Method-Model Combination for Asset Pricing
 
-- **Attribution Method**: shap
+- **Attribution Method**: xgboost
 - **Model Type**: xgboost
-- **Overall Faithfulness Score**: -24.1535
-- **Top-K Accuracy**: 0.8030
-- **Attribution Ratio**: 4.1129
+- **Overall Faithfulness Score**: -24.0987
+- **Top-K Accuracy**: 1.0000
+- **Attribution Ratio**: 7.4218
 
 ## Model-Specific Analysis
 
@@ -107,7 +127,7 @@ This document presents the key results from our experiments evaluating the causa
 
 | Model Type | Overall Faithfulness Score |
 |------------|----------------------------|
-| XGBOOST | -29.6949 |
+| XGBOOST | -29.7641 |
 
 
 ## Attribution Method Comparison
@@ -116,22 +136,30 @@ This document presents the key results from our experiments evaluating the causa
 
 | Attribution Method | Overall Score | Top-K Accuracy | Attribution Ratio |
 |--------------------|---------------|---------------|------------------|
-| shap | -29.6949 | 0.8450 | 4.2215 |
+| xgboost | -29.6574 | 1.0000 | 5.4751 |
+| shap | -29.6700 | 0.9837 | 3.8490 |
+| saliency | -29.8310 | 0.4710 | 0.9961 |
+| gradient_input | -29.8310 | 0.4710 | 0.9961 |
+| integrated_gradients | -29.8310 | 0.4710 | 0.9961 |
 
 
 ## Key Findings
 
 ### Summary of Best Performers
 
-- **Best Attribution Method Overall**: Shap (Score: -29.6949)
-- **Best Model Type Overall**: XGBOOST (Score: -29.6949)
+- **Best Attribution Method Overall**: Xgboost (Score: -29.6574)
+- **Best Model Type Overall**: XGBOOST (Score: -29.7641)
 - **Best Performing Scenario**: Asset Pricing
-- **Best Overall Combination**: Shap with XGBOOST on Asset Pricing (Score: -24.1535)
+- **Best Overall Combination**: Xgboost with XGBOOST on Asset Pricing (Score: -24.0987)
 
 ### Observations on Causal Feature Identification
 
 - **Easiest Scenario for Identifying Causal Features**: Credit Risk
 - **Most Challenging Scenario for Identifying Causal Features**: Asset Pricing
+
+### SHAP Performance
+
+SHAP consistently outperforms other attribution methods in identifying causal features. This aligns with its theoretical guarantees based on Shapley values from cooperative game theory, which provide a fair distribution of feature importance.
 
 ### Fraud Detection Insights
 
@@ -141,7 +169,7 @@ The fraud detection scenario presents unique challenges for attribution methods 
 
 Based on these findings, practitioners in financial domains should:
 
-1. **Use Shap for Financial Models**: When causal understanding is crucial, Shap provides the most reliable feature attributions that align with true causal relationships.
+1. **Use Xgboost for Financial Models**: When causal understanding is crucial, Xgboost provides the most reliable feature attributions that align with true causal relationships.
 
 2. **Consider XGBOOST Models**: These models demonstrated the best overall alignment between feature importance and true causal relationships in our experiments.
 

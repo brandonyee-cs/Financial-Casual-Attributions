@@ -2,7 +2,7 @@ Key findings from the report:
 
 ## Key Findings
 
-1. **Shap performs best**: Our experiments show that Shap provides the most causally faithful explanations across financial scenarios.
+1. **Xgboost performs best**: Our experiments show that Xgboost provides the most causally faithful explanations across financial scenarios.
 
 2. **XGBOOST models yield more causally accurate attributions**: XGBOOST models demonstrated superior ability to generate attributions that align with true causal structure.
 

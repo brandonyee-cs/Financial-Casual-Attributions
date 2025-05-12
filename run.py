@@ -96,8 +96,8 @@ CONFIG = {
     'attributions': {
         'methods': {
             'mlp': ['saliency', 'gradient_input', 'integrated_gradients', 'shap'],
-            'lstm': ['saliency', 'gradient_input', 'integrated_gradients'],
-            'xgboost': ['shap']
+            'lstm': ['saliency', 'gradient_input', 'integrated_gradients', 'shap'],
+            'xgboost': ['saliency', 'gradient_input', 'integrated_gradients', 'shap', 'xgboost']
         },
         'n_samples': 1000,
         'random_state': 42
@@ -263,11 +263,7 @@ def compute_attributions(data_dir: str, model_dir: str, results_dir: str, plots_
                 continue
             
             for method in attribution_methods:
-                # Skip SHAP for LSTM models (very slow)
-                if method == 'shap' and model_type == 'lstm':
-                    logger.warning(f"Skipping SHAP for LSTM model (can be very slow)")
-                    continue
-                
+                # Remove the SHAP skip for LSTM models
                 try:
                     # Run attribution analysis
                     result = run_attribution_analysis(
@@ -287,7 +283,7 @@ def compute_attributions(data_dir: str, model_dir: str, results_dir: str, plots_
                     logger.info(f"Plots saved to {result['paths']['heatmap']} and {result['paths']['barplot']}")
                     
                 except Exception as e:
-                    logger.error(f"Error computing {method} for {scenario} using {model_type}: {str(e)}")
+                    logger.error(f"Error computing {method} for {scenario} using {model_type}: {str(e)}", exc_info=True)
 
 def main():
     """Main function to run the complete analysis pipeline."""

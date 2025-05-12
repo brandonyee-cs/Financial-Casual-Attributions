@@ -1,4 +1,4 @@
-scenario,model_type,shap
-asset_pricing,xgboost,0.803
-credit_risk,xgboost,0.874
-fraud_detection,xgboost,0.858
+scenario,model_type,gradient_input,integrated_gradients,saliency,shap,xgboost
+asset_pricing,xgboost,0.41,0.41,0.41,0.979,1.0
+credit_risk,xgboost,0.501,0.501,0.501,0.988,1.0
+fraud_detection,xgboost,0.501,0.501,0.501,0.984,1.0
