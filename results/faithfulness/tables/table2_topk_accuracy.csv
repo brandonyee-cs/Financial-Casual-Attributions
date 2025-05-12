@@ -1,0 +1,4 @@
+scenario,model_type,shap
+asset_pricing,xgboost,0.803
+credit_risk,xgboost,0.874
+fraud_detection,xgboost,0.858
