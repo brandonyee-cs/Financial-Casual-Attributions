@@ -379,7 +379,11 @@ def main():
         combined_metrics = pd.concat(all_metrics, ignore_index=True)
         
         # Save combined metrics
+        os.makedirs(output_dir, exist_ok=True)
         combined_metrics.to_csv(os.path.join(output_dir, 'all_faithfulness_metrics.csv'), index=False)
+        
+        # Also save a copy directly in the results directory for report generation
+        combined_metrics.to_csv(os.path.join(results_dir, 'all_faithfulness_metrics.csv'), index=False)
         
         # Generate summary plots
         generate_summary_plots(combined_metrics, plots_dir)

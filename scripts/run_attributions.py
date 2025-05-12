@@ -44,7 +44,7 @@ def parse_args():
                         help='Directory containing datasets')
     parser.add_argument('--model_dir', type=str, default='models',
                         help='Directory containing trained models')
-    parser.add_argument('--output_dir', type=str, default='results/attributions',
+    parser.add_argument('--output_dir', type=str, default='results',
                         help='Directory to save attributions')
     parser.add_argument('--scenarios', type=str, nargs='+',
                         default=['asset_pricing', 'credit_risk', 'fraud_detection'],
@@ -146,7 +146,7 @@ def main():
     dirs = create_directories()
     data_dir = args.data_dir if args.data_dir else dirs['data']
     model_dir = args.model_dir if args.model_dir else dirs['models']
-    output_dir = args.output_dir if args.output_dir else os.path.join(dirs['results'], 'attributions')
+    output_dir = args.output_dir if args.output_dir else dirs['results']
     plots_dir = os.path.join(dirs['plots'], 'attributions')
     
     os.makedirs(output_dir, exist_ok=True)

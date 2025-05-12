@@ -35,7 +35,7 @@ def run_attributions(data_dir, model_dir, output_dir, scenarios, model_types,
     
     # Define attribution methods for each model type
     model_attribution_methods = {
-        'mlp': ['saliency', 'gradient_input', 'integrated_gradients'],
+        'mlp': ['saliency', 'gradient_input', 'integrated_gradients', 'shap'],
         'lstm': ['saliency', 'gradient_input', 'integrated_gradients'],
         'xgboost': ['shap']  # Changed from 'shapley' to 'shap'
     }
@@ -104,7 +104,7 @@ def main():
     run_attributions(
         data_dir=dirs['data'],
         model_dir=dirs['models'],
-        output_dir=dirs['results'],
+        output_dir=dirs['results'],  # Save directly to results directory
         scenarios=scenarios,
         model_types=model_types,
         attribution_methods=None,  # Will be set per model type
@@ -116,4 +116,4 @@ def main():
     logger.info("Completed all attribution computations!")
 
 if __name__ == '__main__':
-    main() 
+    main()
